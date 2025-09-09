@@ -214,7 +214,6 @@ const DashboardPage: React.FC = () => {
                   <div className="relative mb-4 rounded-2xl overflow-hidden bg-black">
                     <Scanner
                       onScan={handleScan}
-                      onError={handleError}
                       constraints={{
                         facingMode: 'environment'
                       }}
