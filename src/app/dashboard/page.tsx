@@ -24,7 +24,7 @@ interface CashbackResponse {
   message?: string;
   transactionId?: string;
   amount?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Типы для состояния результата обработки
@@ -44,7 +44,7 @@ interface CashbackRequest {
 interface ApiError {
   message: string;
   status?: number;
-  [key: string]: any;
+  [key: string]: unknown ;
 }
 
 const DashboardPage: React.FC = () => {
@@ -82,11 +82,6 @@ const DashboardPage: React.FC = () => {
       setError('');
       setProcessingResult(null);
     }
-  };
-
-  const handleError = (error: Error): void => {
-    console.log('Scan error:', error);
-    setError('Ошибка при сканировании. Проверьте доступ к камере.');
   };
 
   const startScanning = (): void => {
@@ -448,7 +443,7 @@ const DashboardPage: React.FC = () => {
               </li>
               <li className="flex items-start space-x-2">
                 <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
-                <span>Нажмите "Обработать кэшбэк" для отправки данных</span>
+                <span>Нажмите &quot;Обработать кэшбэк&quot; для отправки данных</span>
               </li>
             </ul>
           </div>

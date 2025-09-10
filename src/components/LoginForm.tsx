@@ -17,7 +17,8 @@ export function LoginForm() {
         password: ""
     });
 
-    const { login }: any = useAuth();
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+const { login } = useAuth() as { login: Function };
 
     const router = useRouter();
 
@@ -57,7 +58,7 @@ export function LoginForm() {
             router.push("/dashboard")
         },
         onError: (error) => {
-            setErrors(prev => ({ ...prev, phone: 'Ошибка сети. Попробуйте позже.' }));
+            setErrors(prev => ({ ...prev, phone: `${error} Ошибка сети. Попробуйте позже.` }));
         }
     });
 
