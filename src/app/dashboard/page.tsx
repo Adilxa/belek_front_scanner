@@ -22,8 +22,8 @@ import {
 } from 'lucide-react';
 
 // Конфигурация Supabase - ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ
-const supabaseUrl = 'YOUR_SUPABASE_URL'; // например: 'https://your-project.supabase.co'
-const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseUrl = 'https://thggdvdkvsrytiwqhsbe.supabase.co'; // например: 'https://your-project.supabase.co'
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZ2dkdmRrdnNyeXRpd3Foc2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MTIyMjIsImV4cCI6MjA2MzQ4ODIyMn0.a_-qrjwuFCv8hk0IOSGqAYHznwTlG_e3guNzUFMun3E';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Типы для продукта
@@ -46,7 +46,7 @@ interface CashbackResponse {
   message?: string;
   transactionId?: string;
   amount?: number;
-  [key: string]: unknown;
+  [key: string]: any;
 }
 
 // Типы для состояния результата обработки
@@ -83,7 +83,7 @@ const DashboardPage: React.FC = () => {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
-
+  const [selectedId, setSelectedId] = useState<any[]>([])
   // Поиск товаров в Supabase
   const searchProducts = async (query: string): Promise<void> => {
     if (!query.trim()) {
@@ -181,6 +181,9 @@ const DashboardPage: React.FC = () => {
   };
 
   const handleProductToggle = (product: Product): void => {
+    setSelectedId((prev) => {
+      return [...prev, product.id];
+    })
     setSelectedProducts(prev => {
       const isSelected = prev.some(p => p.id === product.id);
       if (isSelected) {
@@ -218,10 +221,11 @@ const DashboardPage: React.FC = () => {
       const phoneNumber: string = scannedData.startsWith('+') ? scannedData : `+${scannedData}`;
 
       // Отправляем запросы для каждого выбранного продукта
-      const promises = selectedProducts.map(product => {
+
+      const promises = selectedProducts.map(() => {
         const requestData: CashbackRequest = {
           phoneNumber: phoneNumber,
-          productId: product.id
+          productId: selectedId
         };
         return $api.post<CashbackResponse>(`/cashback/process`, requestData);
       });
