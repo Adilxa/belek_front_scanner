@@ -2,15 +2,37 @@
 
 import React, { useState, useEffect } from 'react';
 import { Scanner } from '@yudiel/react-qr-scanner';
-import axios, { AxiosError } from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import $api from '@/api/axios';
+import {
+  Package,
+  Camera,
+  CheckCircle,
+  Copy,
+  ExternalLink,
+  ArrowLeft,
+  Loader2,
+  XCircle,
+  Zap,
+  DollarSign,
+  User,
+  AlertTriangle,
+  Search,
+  X
+} from 'lucide-react';
+
+// Конфигурация Supabase - ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ
+const supabaseUrl = 'https://thggdvdkvsrytiwqhsbe.supabase.co'; // например: 'https://your-project.supabase.co'
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZ2dkdmRrdnNyeXRpd3Foc2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MTIyMjIsImV4cCI6MjA2MzQ4ODIyMn0.a_-qrjwuFCv8hk0IOSGqAYHznwTlG_e3guNzUFMun3E';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Типы для продукта
 interface Product {
   id: string;
   name: string;
   price: number;
-  createdAt: string;
+  description?: string;
+  created_at?: string;
 }
 
 // Типы для результата сканирования
@@ -40,16 +62,9 @@ interface CashbackRequest {
   productId: string;
 }
 
-// Типы для ошибки API
-interface ApiError {
-  message: string;
-  status?: number;
-  [key: string]: unknown;
-}
-
 // Enum для состояний приложения
 enum AppState {
-  PRODUCT_SELECTION = 'PRODUCT_SELECTION',
+  PRODUCT_SEARCH = 'PRODUCT_SEARCH',
   READY_TO_SCAN = 'READY_TO_SCAN',
   SCANNING = 'SCANNING',
   SCANNED = 'SCANNED',
@@ -59,33 +74,60 @@ enum AppState {
 }
 
 const DashboardPage: React.FC = () => {
-  const [currentState, setCurrentState] = useState<AppState>(AppState.PRODUCT_SELECTION);
+  const [currentState, setCurrentState] = useState<AppState>(AppState.PRODUCT_SEARCH);
   const [scannedData, setScannedData] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
+  console.log(selectedProducts)
+  // Поиск товаров в Supabase
+  const searchProducts = async (query: string): Promise<void> => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
 
-  // Загрузка продуктов при монтировании компонента
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  const fetchProducts = async (): Promise<void> => {
     try {
-      setIsLoading(true);
-      const response = await axios.get<Product[]>('https://68bb5f3d84055bce63f1cbb7.mockapi.io/products');
-      setProducts(response.data);
+      setIsSearching(true);
+      setError('');
+
+      // Поиск по названию товара (case insensitive)
+      const { data, error: searchError } = await supabase
+        .from('products') // ЗАМЕНИТЕ НА НАЗВАНИЕ ВАШЕЙ ТАБЛИЦЫ
+        .select('*')
+        .ilike('name', `%${query}%`)
+        .limit(20);
+
+      if (searchError) {
+        throw searchError;
+      }
+
+      setSearchResults(data || []);
     } catch (err) {
-      const error = err as AxiosError;
-      setError('Ошибка при загрузке продуктов');
-      setCurrentState(AppState.ERROR);
-      console.error('Error fetching products:', error);
+      console.error('Error searching products:', err);
+      setError('Ошибка при поиске товаров');
+      setSearchResults([]);
     } finally {
-      setIsLoading(false);
+      setIsSearching(false);
     }
   };
+
+  // Debounced поиск
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchQuery) {
+        searchProducts(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   const handleScan = (result: ScanResult[]): void => {
     if (result && result.length > 0) {
@@ -107,12 +149,14 @@ const DashboardPage: React.FC = () => {
     setCurrentState(AppState.READY_TO_SCAN);
   };
 
-  const resetToProductSelection = (): void => {
+  const resetToProductSearch = (): void => {
     setScannedData('');
     setError('');
-    setCurrentState(AppState.PRODUCT_SELECTION);
+    setCurrentState(AppState.PRODUCT_SEARCH);
     setProcessingResult(null);
     setSelectedProducts([]);
+    setSearchQuery('');
+    setSearchResults([]);
   };
 
   const resetToReadyToScan = (): void => {
@@ -136,22 +180,33 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  const handleProductToggle = (productId: string): void => {
-    setSelectedProducts(prev => 
-      prev.includes(productId)
-        ? prev.filter(id => id !== productId)
-        : [...prev, productId]
-    );
+  const handleProductToggle = (product: Product): void => {
+    setSelectedProducts(prev => {
+      const isSelected = prev.some(p => p.id === product.id);
+      if (isSelected) {
+        return prev.filter(p => p.id !== product.id);
+      } else {
+        return [...prev, product];
+      }
+    });
   };
 
   const confirmProductSelection = (): void => {
     if (selectedProducts.length === 0) {
-      setError('Выберите хотя бы один продукт');
+      setError('Выберите хотя бы один товар');
       return;
     }
     setError('');
     setCurrentState(AppState.READY_TO_SCAN);
   };
+
+  const clearSearch = (): void => {
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+
+  const [log, setLog] = useState<any>(null);
 
   const processCashback = async (): Promise<void> => {
     if (selectedProducts.length === 0 || !scannedData) {
@@ -162,240 +217,322 @@ const DashboardPage: React.FC = () => {
     try {
       setCurrentState(AppState.PROCESSING);
       setError('');
-      
-      const phoneNumber: string = scannedData.startsWith('+') ? scannedData : `+${scannedData}`;
-      
-      // Отправляем запросы для каждого выбранного продукта
-      const promises = selectedProducts.map(productId => {
-        const requestData: CashbackRequest = {
-          phoneNumber: phoneNumber,
-          productId: productId
-        };
-        return $api.post<CashbackResponse>(`/cashback/process`, requestData);
-      });
 
-      const responses = await Promise.all(promises);
-      
-      setProcessingResult({
-        success: true,
-        data: {
-          success: true,
-          message: `Кэшбэк обработан для ${responses.length} товаров`,
-          results: responses.map(r => r.data)
-        } as CashbackResponse
-      });
-      
-      setCurrentState(AppState.RESULT);
-    } catch (err) {
-      const error = err as AxiosError<ApiError>;
-      console.error('Error processing cashback:', error);
-      
+      const phoneNumber: string = scannedData.startsWith('+') ? scannedData : `+${scannedData}`;
+      const sendData = { phoneNumber: phoneNumber, productId: "d56cf392-160e-4a4e-b514-1343174ba09b" }
+      const res = await $api.post("/cashback/process", sendData)
+      console.log(res)
+
+      // Отправляем запросы для каждого выбранного продукта
+      // const promises = selectedProducts.map(product => {
+      //   const requestData: CashbackRequest = {
+      //     phoneNumber: phoneNumber,
+      //     productId: product.id
+      //   };
+
+      //   const awaitedFun = async () => {
+      //     const res = await $api.post<any>(`/cashback/process`, requestData);
+      //     return res.data
+      //   }
+
+      //   const d = awaitedFun()
+
+      //   setLog(d)
+      // });
+
+      // const responses = await Promise.all(promises);
+
+      // setProcessingResult({
+      //   success: true,
+      //   data: {
+      //     success: true,
+      //     message: `Кэшбэк обработан для ${responses.length} товаров`,
+      //     results: responses.map(r => r.data),
+      //     processedProducts: selectedProducts,
+      //     phoneNumber: phoneNumber
+      //   } as CashbackResponse
+      // });
+
+      // setCurrentState(AppState.RESULT);
+    } catch (err: any) {
+      console.error('Error processing cashback:', err);
+
       setProcessingResult({
         success: false,
-        error: error.response?.data?.message || error.message || 'Ошибка при обработке запроса'
+        error: err.response?.data?.message || err.message || 'Ошибка при обработке запроса'
       });
-      
+
       setCurrentState(AppState.RESULT);
     }
   };
 
-  const selectedProductDetails: Product[] = products.filter(
-    (product: Product) => selectedProducts.includes(product.id)
-  );
+  const totalAmount = selectedProducts.reduce((sum, product) => sum + product.price, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">QR Scanner & Cashback</h1>
-          <p className="text-gray-600">Выберите товары, отсканируйте QR код и обработайте кэшбэк</p>
-        </div>
+    <div className="min-h-screen bg-black text-white overflow-hidden relative">
+      {/* Background effects */}
+      <div className="absolute inset-0 bg-gradient-to-br from-gray-900/50 via-black to-gray-900/30"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(120,119,198,0.1),transparent)]"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(236,72,153,0.05),transparent)]"></div>
 
-        {/* Progress Indicator */}
-        <div className="max-w-md mx-auto mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              currentState === AppState.PRODUCT_SELECTION 
-                ? 'bg-blue-500 text-white' 
-                : selectedProducts.length > 0
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-300 text-gray-600'
-            }`}>1</div>
-            <div className={`flex-1 h-1 mx-2 ${
-              selectedProducts.length > 0 ? 'bg-green-500' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              currentState === AppState.READY_TO_SCAN || currentState === AppState.SCANNING
-                ? 'bg-blue-500 text-white'
-                : scannedData
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-300 text-gray-600'
-            }`}>2</div>
-            <div className={`flex-1 h-1 mx-2 ${
-              scannedData ? 'bg-green-500' : 'bg-gray-300'
-            }`}></div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              processingResult?.success
-                ? 'bg-green-500 text-white'
-                : processingResult?.error
-                  ? 'bg-red-500 text-white'
-                  : 'bg-gray-300 text-gray-600'
-            }`}>3</div>
-          </div>
-          <div className="flex justify-between text-xs text-gray-600">
-            <span>Товары</span>
-            <span>Сканер</span>
-            <span>Результат</span>
-          </div>
-        </div>
+      {/* Floating particles */}
+      <h1>Amin hui</h1>
+      <div>
+        {JSON.stringify(log)}
+      </div>
+      <div className="absolute inset-0">
+        {[...Array(25)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-white/20 rounded-full animate-pulse"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              animationDelay: `${Math.random() * 3}s`,
+              animationDuration: `${2 + Math.random() * 3}s`
+            }}
+          />
+        ))}
+      </div>
 
-        {/* Main Content */}
+      <div className="relative z-10 min-h-screen p-6">
         <div className="max-w-md mx-auto">
-          {/* Product Selection State */}
-          {currentState === AppState.PRODUCT_SELECTION && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
-              <div className="p-6">
-                <div className="text-center mb-6">
-                  <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-2">Выберите товары</h3>
-                  <p className="text-gray-600">Выберите один или несколько товаров для кэшбэка</p>
-                </div>
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-3xl mb-6 shadow-2xl">
+              <Zap className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-3xl font-black text-white mb-2 tracking-tight">QR КЭШБЭК</h1>
+            <p className="text-gray-400">Система обработки бонусов</p>
+          </div>
 
-                {isLoading && !products.length ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="ml-2 text-gray-600">Загрузка товаров...</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-3 mb-6 max-h-64 overflow-y-auto">
-                      {products.map((product: Product) => (
+          {/* Progress Indicator */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${currentState === AppState.PRODUCT_SEARCH
+                ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
+                : selectedProducts.length > 0
+                  ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                }`}>
+                <Search className="w-5 h-5" />
+              </div>
+              <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-500 ${selectedProducts.length > 0 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-800/50'
+                }`}></div>
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${currentState === AppState.READY_TO_SCAN || currentState === AppState.SCANNING
+                ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
+                : scannedData
+                  ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                }`}>
+                <Camera className="w-5 h-5" />
+              </div>
+              <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-500 ${scannedData ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-800/50'
+                }`}></div>
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${processingResult?.success
+                ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                : processingResult?.error
+                  ? 'bg-red-500/20 border border-red-500/30 text-red-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                }`}>
+                <DollarSign className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>Поиск</span>
+              <span>Сканер</span>
+              <span>Результат</span>
+            </div>
+          </div>
+
+          {/* Product Search State */}
+          {currentState === AppState.PRODUCT_SEARCH && (
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-3xl flex items-center justify-center">
+                  <Search className="w-8 h-8 text-blue-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Поиск товаров</h3>
+                <p className="text-gray-400">Найдите и выберите товары для кэшбэка</p>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative mb-6">
+                <input
+                  type="text"
+                  placeholder="Введите название товара..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-gray-800/50 border border-gray-700/30 text-white placeholder-gray-400 px-4 py-3 pr-10 rounded-2xl focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 focus:outline-none transition-all duration-300"
+                />
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  {isSearching ? (
+                    <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
+                  ) : searchQuery ? (
+                    <button
+                      onClick={clearSearch}
+                      className="w-5 h-5 text-gray-400 hover:text-white transition-colors duration-200"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <Search className="w-5 h-5 text-gray-400" />
+                  )}
+                </div>
+              </div>
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-white font-semibold mb-3">Результаты поиска ({searchResults.length})</h4>
+                  <div className="space-y-3 max-h-80 overflow-y-auto">
+                    {searchResults.map((product: Product) => {
+                      const isSelected = selectedProducts.some(p => p.id === product.id);
+                      return (
                         <div
                           key={product.id}
-                          onClick={() => handleProductToggle(product.id)}
-                          className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
-                            selectedProducts.includes(product.id)
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
+                          onClick={() => handleProductToggle(product)}
+                          className={`p-4 rounded-2xl border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] ${isSelected
+                            ? 'border-purple-500/50 bg-purple-500/10 shadow-lg'
+                            : 'border-gray-800/50 bg-gray-800/30 hover:border-gray-700/50'
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
-                              <h4 className="font-semibold text-gray-800">{product.name}</h4>
-                              <p className="text-sm text-gray-600">${product.price}</p>
+                              <h4 className="font-bold text-white mb-1">{product.name}</h4>
+                              <p className="text-purple-400 font-semibold">сом {product.price}</p>
+                              {product.description && (
+                                <p className="text-gray-400 text-sm mt-1">{product.description}</p>
+                              )}
                             </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                              selectedProducts.includes(product.id)
-                                ? 'border-blue-500 bg-blue-500'
-                                : 'border-gray-300'
-                            }`}>
-                              {selectedProducts.includes(product.id) && (
-                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${isSelected
+                              ? 'border-purple-500 bg-purple-500'
+                              : 'border-gray-600'
+                              }`}>
+                              {isSelected && (
+                                <CheckCircle className="w-4 h-4 text-white" fill="currentColor" />
                               )}
                             </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-
-                    {selectedProducts.length > 0 && (
-                      <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                        <p className="text-sm text-gray-700">
-                          Выбрано товаров: <span className="font-semibold">{selectedProducts.length}</span>
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Общая стоимость: $
-                          {selectedProductDetails.reduce((sum, product) => sum + product.price, 0)}
-                        </p>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={confirmProductSelection}
-                      disabled={selectedProducts.length === 0}
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-4 px-6 rounded-2xl hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                      type="button"
-                    >
-                      Продолжить к сканированию
-                    </button>
-                  </>
-                )}
-
-                {error && (
-                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-red-600 text-sm">{error}</p>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* No Results */}
+              {searchQuery && !isSearching && searchResults.length === 0 && (
+                <div className="text-center py-8">
+                  <Package className="w-12 h-12 text-gray-500 mx-auto mb-3" />
+                  <p className="text-gray-400">Товары не найдены</p>
+                  <p className="text-gray-500 text-sm">Попробуйте изменить поисковый запрос</p>
+                </div>
+              )}
+
+              {/* Selected Products Summary */}
+              {selectedProducts.length > 0 && (
+                <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 mb-6">
+                  <h4 className="text-white font-semibold mb-3 flex items-center">
+                    <Package className="w-4 h-4 mr-2" />
+                    Выбрано товаров: {selectedProducts.length}
+                  </h4>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {selectedProducts.map((product) => (
+                      <div key={product.id} className="flex justify-between text-sm">
+                        <span className="text-gray-300">{product.name}</span>
+                        <span className="text-purple-400 font-semibold">сом {product.price}</span>
+                      </div>
+                    ))}
+                    <div className="border-t border-purple-500/20 pt-2 mt-2">
+                      <div className="flex justify-between font-bold">
+                        <span className="text-white">Общая сумма:</span>
+                        <span className="text-purple-400">сом {totalAmount}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={confirmProductSelection}
+                disabled={selectedProducts.length === 0}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-4 rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
+              >
+                <Camera className="w-5 h-5 mr-3" />
+                Перейти к сканированию
+              </button>
+
+              {error && (
+                <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
+                  <div className="flex items-center">
+                    <AlertTriangle className="w-5 h-5 text-red-400 mr-3" />
+                    <p className="text-red-400 text-sm">{error}</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Ready to Scan State */}
           {currentState === AppState.READY_TO_SCAN && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
-              <div className="p-6">
-                <div className="text-center mb-6">
-                  <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-2">Готов к сканированию</h3>
-                  <p className="text-gray-600 mb-4">Товары выбраны, теперь отсканируйте QR код с номером телефона</p>
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-3xl flex items-center justify-center">
+                  <Camera className="w-8 h-8 text-green-400" />
                 </div>
+                <h3 className="text-xl font-bold text-white mb-2">Готов к сканированию</h3>
+                <p className="text-gray-400 mb-4">Теперь отсканируйте QR код клиента</p>
+              </div>
 
-                {/* Selected Products Summary */}
-                <div className="bg-gray-50 rounded-lg p-3 mb-6">
-                  <h4 className="text-sm font-semibold text-gray-800 mb-2">Выбранные товары ({selectedProducts.length}):</h4>
-                  <div className="space-y-1">
-                    {selectedProductDetails.map((product) => (
-                      <div key={product.id} className="flex justify-between text-xs">
-                        <span className="text-gray-700">{product.name}</span>
-                        <span className="text-gray-600">${product.price}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    onClick={startScanning}
-                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-4 px-6 rounded-2xl hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
-                    type="button"
-                  >
-                    <div className="flex items-center justify-center space-x-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      </svg>
-                      <span>Запустить сканер</span>
+              {/* Selected Products Summary */}
+              <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-6">
+                <h4 className="text-white font-semibold mb-3 flex items-center">
+                  <Package className="w-4 h-4 mr-2" />
+                  Товары к обработке ({selectedProducts.length})
+                </h4>
+                <div className="space-y-2">
+                  {selectedProducts.map((product) => (
+                    <div key={product.id} className="flex justify-between text-sm">
+                      <span className="text-gray-300">{product.name}</span>
+                      <span className="text-purple-400 font-semibold">сом {product.price}</span>
                     </div>
-                  </button>
-
-                  <button
-                    onClick={resetToProductSelection}
-                    className="w-full bg-gray-400 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-500 transition-colors duration-200 text-sm"
-                    type="button"
-                  >
-                    Изменить выбор товаров
-                  </button>
+                  ))}
+                  <div className="border-t border-gray-700/30 pt-2 mt-2">
+                    <div className="flex justify-between font-bold">
+                      <span className="text-white">Итого:</span>
+                      <span className="text-purple-400">сом {totalAmount}</span>
+                    </div>
+                  </div>
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={startScanning}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-2xl hover:from-green-600 hover:to-emerald-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl flex items-center justify-center"
+                >
+                  <Camera className="w-5 h-5 mr-3" />
+                  Запустить сканер QR
+                </button>
+
+                <button
+                  onClick={resetToProductSearch}
+                  className="w-full bg-gray-700/50 border border-gray-600/30 text-white font-semibold py-3 rounded-2xl hover:bg-gray-700/70 hover:border-gray-500/50 transition-all duration-300 flex items-center justify-center"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Изменить товары
+                </button>
               </div>
             </div>
           )}
 
           {/* Scanning State */}
           {currentState === AppState.SCANNING && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl overflow-hidden mb-6">
               <div className="p-6">
-                <div className="text-center">
-                  <div className="relative mb-4 rounded-2xl overflow-hidden bg-black">
+                <div className="text-center mb-4">
+                  <div className="relative rounded-2xl overflow-hidden bg-black border border-gray-700/50">
                     <Scanner
                       onScan={handleScan}
                       constraints={{
@@ -404,37 +541,45 @@ const DashboardPage: React.FC = () => {
                       styles={{
                         container: {
                           width: '100%',
-                          height: '300px'
+                          height: '320px'
                         }
                       }}
                     />
-                    
+
                     {/* Scanning Overlay */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-48 h-48 border-2 border-white rounded-2xl relative">
-                        <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-blue-400 rounded-tl-lg"></div>
-                        <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-blue-400 rounded-tr-lg"></div>
-                        <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-blue-400 rounded-bl-lg"></div>
-                        <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-blue-400 rounded-br-lg"></div>
-                        
-                        {/* Scanning Line Animation */}
-                        <div className="absolute top-1/2 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse transform -translate-y-1/2"></div>
+                      <div className="w-56 h-56 border-2 border-purple-400/50 rounded-3xl relative">
+                        {/* Corner indicators */}
+                        <div className="absolute -top-1 -left-1 w-8 h-8 border-l-4 border-t-4 border-purple-400 rounded-tl-2xl"></div>
+                        <div className="absolute -top-1 -right-1 w-8 h-8 border-r-4 border-t-4 border-purple-400 rounded-tr-2xl"></div>
+                        <div className="absolute -bottom-1 -left-1 w-8 h-8 border-l-4 border-b-4 border-purple-400 rounded-bl-2xl"></div>
+                        <div className="absolute -bottom-1 -right-1 w-8 h-8 border-r-4 border-b-4 border-purple-400 rounded-br-2xl"></div>
+
+                        {/* Scanning line */}
+                        <div className="absolute top-1/2 left-4 right-4 h-1 bg-gradient-to-r from-transparent via-purple-400 to-transparent animate-pulse transform -translate-y-1/2 rounded-full"></div>
                       </div>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-center space-x-2 mb-4">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
+
+                <div className="text-center">
+                  <div className="flex justify-center mb-4">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-2 h-2 bg-purple-400 rounded-full animate-bounce mx-1"
+                        style={{ animationDelay: `${i * 0.1}s` }}
+                      />
+                    ))}
                   </div>
-                  
-                  <p className="text-gray-600 mb-4">Наведите камеру на QR код с номером телефона</p>
+
+                  <p className="text-gray-300 mb-6">Наведите камеру на QR код</p>
+
                   <button
                     onClick={stopScanning}
-                    className="w-full bg-red-500 text-white font-semibold py-3 px-6 rounded-2xl hover:bg-red-600 transition-colors duration-200"
-                    type="button"
+                    className="w-full bg-red-500/20 border border-red-500/30 text-red-400 font-semibold py-3 rounded-2xl hover:bg-red-500/30 hover:border-red-500/50 transition-all duration-300 flex items-center justify-center"
                   >
+                    <XCircle className="w-5 h-5 mr-2" />
                     Остановить сканирование
                   </button>
                 </div>
@@ -444,104 +589,91 @@ const DashboardPage: React.FC = () => {
 
           {/* Scanned State */}
           {currentState === AppState.SCANNED && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
-              <div className="p-6">
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-4">QR код отсканирован!</h3>
-                  
-                  <div className="bg-gray-50 rounded-2xl p-4 mb-4">
-                    <p className="text-sm text-gray-600 mb-2">Номер телефона:</p>
-                    <p className="text-gray-800 font-mono text-sm break-all bg-white p-3 rounded-lg border">
-                      {scannedData}
-                    </p>
-                  </div>
-
-                  {/* Selected Products Summary */}
-                  <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                    <h4 className="text-sm font-semibold text-gray-800 mb-2">К обработке ({selectedProducts.length} товаров):</h4>
-                    <div className="space-y-1 text-xs">
-                      {selectedProductDetails.map((product) => (
-                        <div key={product.id} className="flex justify-between">
-                          <span className="text-gray-700">{product.name}</span>
-                          <span className="text-gray-600">${product.price}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <button
-                      onClick={copyToClipboard}
-                      className="bg-blue-500 text-white font-semibold py-3 px-4 rounded-2xl hover:bg-blue-600 transition-colors duration-200 text-sm flex items-center justify-center space-x-1"
-                      type="button"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      <span>Копировать</span>
-                    </button>
-                    {(scannedData.startsWith('http://') || scannedData.startsWith('https://')) && (
-                      <button
-                        onClick={openLink}
-                        className="bg-green-500 text-white font-semibold py-3 px-4 rounded-2xl hover:bg-green-600 transition-colors duration-200 text-sm flex items-center justify-center space-x-1"
-                        type="button"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                        <span>Открыть</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <button
-                      onClick={processCashback}
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold py-4 px-6 rounded-2xl hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-lg flex items-center justify-center space-x-2"
-                      type="button"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                      </svg>
-                      <span>Обработать кэшбэк</span>
-                    </button>
-
-                    <button
-                      onClick={resetToReadyToScan}
-                      className="w-full bg-gray-400 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-500 transition-colors duration-200 text-sm"
-                      type="button"
-                    >
-                      Сканировать другой QR код
-                    </button>
-
-                    <button
-                      onClick={resetToProductSelection}
-                      className="w-full bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-400 transition-colors duration-200 text-sm"
-                      type="button"
-                    >
-                      Изменить товары
-                    </button>
-                  </div>
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 bg-green-500/20 border border-green-500/30 rounded-3xl flex items-center justify-center">
+                  <CheckCircle className="w-8 h-8 text-green-400" />
                 </div>
+                <h3 className="text-xl font-bold text-white mb-2">QR код отсканирован!</h3>
+              </div>
+
+              <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-4">
+                <div className="flex items-center mb-2">
+                  <User className="w-4 h-4 text-blue-400 mr-2" />
+                  <span className="text-gray-400 text-sm">Номер телефона:</span>
+                </div>
+                <p className="text-white font-mono text-lg bg-gray-800/60 p-3 rounded-xl border border-gray-700/30 break-all">
+                  {scannedData}
+                </p>
+              </div>
+
+              {/* Transaction Summary */}
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 mb-6">
+                <h4 className="text-white font-semibold mb-3 flex items-center">
+                  <Zap className="w-4 h-4 mr-2" />
+                  К обработке ({selectedProducts.length} товаров)
+                </h4>
+                <div className="space-y-2">
+                  {selectedProducts.map((product) => (
+                    <div key={product.id} className="flex justify-between text-sm">
+                      <span className="text-gray-300">{product.name}</span>
+                      <span className="text-purple-400 font-semibold">сом {product.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <button
+                  onClick={copyToClipboard}
+                  className="bg-blue-500/20 border border-blue-500/30 text-blue-400 font-semibold py-3 rounded-2xl hover:bg-blue-500/30 hover:border-blue-500/50 transition-all duration-300 flex items-center justify-center"
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Копировать
+                </button>
+                {(scannedData.startsWith('http://') || scannedData.startsWith('https://')) && (
+                  <button
+                    onClick={openLink}
+                    className="bg-green-500/20 border border-green-500/30 text-green-400 font-semibold py-3 rounded-2xl hover:bg-green-500/30 hover:border-green-500/50 transition-all duration-300 flex items-center justify-center"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Открыть
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={processCashback}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-4 rounded-2xl hover:from-green-600 hover:to-emerald-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl flex items-center justify-center"
+                >
+                  <DollarSign className="w-5 h-5 mr-3" />
+                  Обработать кэшбэк
+                </button>
+
+                <button
+                  onClick={resetToReadyToScan}
+                  className="w-full bg-gray-700/50 border border-gray-600/30 text-white font-semibold py-3 rounded-2xl hover:bg-gray-700/70 hover:border-gray-500/50 transition-all duration-300"
+                >
+                  Сканировать другой QR
+                </button>
               </div>
             </div>
           )}
 
           {/* Processing State */}
           {currentState === AppState.PROCESSING && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
-              <div className="p-6">
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
-                    <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-blue-500/20 border border-blue-500/30 rounded-3xl flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Обработка кэшбэка...</h3>
+                <p className="text-gray-400">Отправляем данные на сервер</p>
+                <div className="mt-4">
+                  <div className="text-sm text-gray-500">
+                    Обрабатываем {selectedProducts.length} товаров
                   </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-2">Обработка кэшбэка...</h3>
-                  <p className="text-gray-600">Отправляем данные на сервер, пожалуйста подождите</p>
                 </div>
               </div>
             </div>
@@ -549,55 +681,71 @@ const DashboardPage: React.FC = () => {
 
           {/* Result State */}
           {currentState === AppState.RESULT && processingResult && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               {processingResult.success ? (
                 <div className="text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                  <div className="w-16 h-16 mx-auto mb-4 bg-green-500/20 border border-green-500/30 rounded-3xl flex items-center justify-center">
+                    <CheckCircle className="w-8 h-8 text-green-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-green-600 mb-2">Кэшбэк успешно обработан!</h3>
-                  {processingResult.data && (
-                    <div className="bg-green-50 rounded-lg p-3 text-sm text-gray-700">
-                      <pre className="whitespace-pre-wrap">
-                        {JSON.stringify(processingResult.data, null, 2)}
-                      </pre>
+                  <h3 className="text-xl font-bold text-green-400 mb-4">Кэшбэк успешно обработан!</h3>
+
+                  {/* Transaction Details */}
+                  <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4 mb-6 text-left">
+                    <h4 className="text-green-300 font-semibold mb-3">Детали транзакции</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-300">Телефон:</span>
+                        <span className="text-green-300 font-mono">{processingResult.data?.phoneNumber}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-300">Товаров:</span>
+                        <span className="text-green-300">{selectedProducts.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-300">Общая сумма:</span>
+                        <span className="text-green-300 font-semibold">сом {totalAmount}</span>
+                      </div>
                     </div>
-                  )}
-                  
-                  <div className="mt-4 space-y-2">
-                    <button
-                      onClick={resetToProductSelection}
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 px-6 rounded-2xl hover:from-blue-600 hover:to-purple-700 transition-all duration-200"
-                      type="button"
-                    >
-                      Начать заново
-                    </button>
+
+                    {processingResult.data && (
+                      <details className="mt-4">
+                        <summary className="text-green-400 cursor-pointer hover:text-green-300 text-sm">
+                          Показать ответ сервера
+                        </summary>
+                        <pre className="text-xs text-green-300 whitespace-pre-wrap overflow-x-auto mt-2 bg-green-500/5 p-3 rounded-xl border border-green-500/10">
+                          {JSON.stringify(processingResult.data, null, 2)}
+                        </pre>
+                      </details>
+                    )}
                   </div>
+
+                  <button
+                    onClick={resetToProductSearch}
+                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-4 rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl"
+                  >
+                    Начать заново
+                  </button>
                 </div>
               ) : (
                 <div className="text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                  <div className="w-16 h-16 mx-auto mb-4 bg-red-500/20 border border-red-500/30 rounded-3xl flex items-center justify-center">
+                    <XCircle className="w-8 h-8 text-red-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-red-600 mb-2">Ошибка обработки</h3>
-                  <p className="text-gray-600 text-sm mb-4">{processingResult.error}</p>
-                  
-                  <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-red-400 mb-4">Ошибка обработки</h3>
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6">
+                    <p className="text-red-300 text-sm">{processingResult.error}</p>
+                  </div>
+
+                  <div className="space-y-3">
                     <button
                       onClick={() => setCurrentState(AppState.SCANNED)}
-                      className="w-full bg-yellow-500 text-white font-semibold py-3 px-6 rounded-2xl hover:bg-yellow-600 transition-colors duration-200"
-                      type="button"
+                      className="w-full bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-semibold py-4 rounded-2xl hover:bg-yellow-500/30 hover:border-yellow-500/50 transition-all duration-300"
                     >
                       Попробовать снова
                     </button>
                     <button
-                      onClick={resetToProductSelection}
-                      className="w-full bg-gray-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-gray-600 transition-colors duration-200 text-sm"
-                      type="button"
+                      onClick={resetToProductSearch}
+                      className="w-full bg-gray-700/50 border border-gray-600/30 text-white font-semibold py-3 rounded-2xl hover:bg-gray-700/70 hover:border-gray-500/50 transition-all duration-300"
                     >
                       Начать заново
                     </button>
@@ -609,49 +757,51 @@ const DashboardPage: React.FC = () => {
 
           {/* Error State */}
           {currentState === AppState.ERROR && (
-            <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-6">
-              <div className="p-6">
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-xl font-semibold text-red-600 mb-2">Ошибка</h3>
-                  <p className="text-gray-600 mb-6">{error}</p>
-                  <button
-                    onClick={() => {
-                      setError('');
-                      setCurrentState(AppState.PRODUCT_SELECTION);
-                      fetchProducts();
-                    }}
-                    className="w-full bg-gray-500 text-white font-semibold py-3 px-6 rounded-2xl hover:bg-gray-600 transition-colors duration-200"
-                    type="button"
-                  >
-                    Попробовать снова
-                  </button>
+            <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 bg-red-500/20 border border-red-500/30 rounded-3xl flex items-center justify-center">
+                  <AlertTriangle className="w-8 h-8 text-red-400" />
                 </div>
+                <h3 className="text-xl font-bold text-red-400 mb-2">Системная ошибка</h3>
+                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6">
+                  <p className="text-red-300">{error}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setError('');
+                    setCurrentState(AppState.PRODUCT_SEARCH);
+                  }}
+                  className="w-full bg-gray-700/50 border border-gray-600/30 text-white font-semibold py-4 rounded-2xl hover:bg-gray-700/70 hover:border-gray-500/50 transition-all duration-300"
+                >
+                  Попробовать снова
+                </button>
               </div>
             </div>
           )}
 
-          {/* Info Card */}
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h4 className="text-lg font-semibold text-gray-800 mb-3">Как использовать:</h4>
-            <ul className="space-y-2 text-sm text-gray-600">
-              <li className="flex items-start space-x-2">
-                <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
-                <span>Выберите один или несколько товаров из списка</span>
-              </li>
-              <li className="flex items-start space-x-2">
-                <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
-                <span>Отсканируйте QR код с номером телефона клиента</span>
-              </li>
-              <li className="flex items-start space-x-2">
-                <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">3</span>
-                <span>Нажмите "Обработать кэшбэк" для отправки данных на сервер</span>
-              </li>
-            </ul>
+          {/* Help Card */}
+          <div className="bg-gray-900/60 backdrop-blur-xl border border-gray-800/30 rounded-3xl shadow-xl p-6">
+            <h4 className="text-lg font-bold text-white mb-4 flex items-center">
+              <Zap className="w-5 h-5 mr-2 text-purple-400" />
+              Инструкция по использованию
+            </h4>
+            <div className="space-y-3">
+              {[
+                { step: 1, text: "Найдите и выберите товары в поиске", icon: Search },
+                { step: 2, text: "Отсканируйте QR код с номером клиента", icon: Camera },
+                { step: 3, text: "Обработайте кэшбэк и получите результат", icon: DollarSign }
+              ].map(({ step, text, icon: Icon }) => (
+                <div key={step} className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-purple-500/20 border border-purple-500/30 rounded-2xl flex items-center justify-center text-xs font-bold text-purple-400 flex-shrink-0">
+                    {step}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Icon className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-300 text-sm">{text}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
