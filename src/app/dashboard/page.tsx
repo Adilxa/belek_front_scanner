@@ -59,7 +59,7 @@ interface ProcessingResult {
 // Типы для запроса кэшбэка
 interface CashbackRequest {
   phoneNumber: string;
-  productId: string[];
+  productId: Array<string>;
 }
 
 // Enum для состояний приложения
@@ -292,30 +292,30 @@ const DashboardPage: React.FC = () => {
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${currentState === AppState.PRODUCT_SEARCH
-                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
-                  : selectedProducts.length > 0
-                    ? 'bg-green-500/20 border border-green-500/30 text-green-400'
-                    : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
+                : selectedProducts.length > 0
+                  ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
                 }`}>
                 <Search className="w-5 h-5" />
               </div>
               <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-500 ${selectedProducts.length > 0 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-800/50'
                 }`}></div>
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${currentState === AppState.READY_TO_SCAN || currentState === AppState.SCANNING
-                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
-                  : scannedData
-                    ? 'bg-green-500/20 border border-green-500/30 text-green-400'
-                    : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg'
+                : scannedData
+                  ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
                 }`}>
                 <Camera className="w-5 h-5" />
               </div>
               <div className={`flex-1 h-1 mx-3 rounded-full transition-all duration-500 ${scannedData ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-800/50'
                 }`}></div>
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold transition-all duration-300 ${processingResult?.success
-                  ? 'bg-green-500/20 border border-green-500/30 text-green-400'
-                  : processingResult?.error
-                    ? 'bg-red-500/20 border border-red-500/30 text-red-400'
-                    : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
+                ? 'bg-green-500/20 border border-green-500/30 text-green-400'
+                : processingResult?.error
+                  ? 'bg-red-500/20 border border-red-500/30 text-red-400'
+                  : 'bg-gray-800/50 border border-gray-700/30 text-gray-500'
                 }`}>
                 <DollarSign className="w-5 h-5" />
               </div>
@@ -375,8 +375,8 @@ const DashboardPage: React.FC = () => {
                           key={product.id}
                           onClick={() => handleProductToggle(product)}
                           className={`p-4 rounded-2xl border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] ${isSelected
-                              ? 'border-purple-500/50 bg-purple-500/10 shadow-lg'
-                              : 'border-gray-800/50 bg-gray-800/30 hover:border-gray-700/50'
+                            ? 'border-purple-500/50 bg-purple-500/10 shadow-lg'
+                            : 'border-gray-800/50 bg-gray-800/30 hover:border-gray-700/50'
                             }`}
                         >
                           <div className="flex items-center justify-between">
@@ -388,8 +388,8 @@ const DashboardPage: React.FC = () => {
                               )}
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${isSelected
-                                ? 'border-purple-500 bg-purple-500'
-                                : 'border-gray-600'
+                              ? 'border-purple-500 bg-purple-500'
+                              : 'border-gray-600'
                               }`}>
                               {isSelected && (
                                 <CheckCircle className="w-4 h-4 text-white" fill="currentColor" />
