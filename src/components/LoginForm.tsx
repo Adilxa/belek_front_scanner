@@ -5,6 +5,7 @@ import { useState } from "react";
 import $api from "../api/axios";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { Phone, Lock, Shield, Eye, EyeOff, Sparkles } from "lucide-react";
 
 interface LoginFormData {
     phone: string;
@@ -17,8 +18,10 @@ export function LoginForm() {
         password: ""
     });
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-const { login } = useAuth() as { login: Function };
+    const [showPassword, setShowPassword] = useState(false);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    const { login } = useAuth() as { login: Function };
 
     const router = useRouter();
 
@@ -31,7 +34,6 @@ const { login } = useAuth() as { login: Function };
             setErrors(prev => ({ ...prev, phone: undefined }));
         }
     };
-
 
     const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({ ...prev, password: e.target.value }));
@@ -52,7 +54,6 @@ const { login } = useAuth() as { login: Function };
                 phoneNumber: user.phoneNumber,
                 name: user.name,
             });
-
         },
         onSuccess: () => {
             router.push("/dashboard")
@@ -78,121 +79,172 @@ const { login } = useAuth() as { login: Function };
     const isFormDisabled = isSubmitting;
 
     return (
-        <div className="w-full max-w-md mx-auto">
-            <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-4">
-                    {/* Поле номера телефона */}
-                    <div>
-                        <label
-                            htmlFor="phone"
-                            className="block text-sm font-medium text-gray-700 mb-2"
-                        >
-                            Номер телефона
-                        </label>
-                        <input
-                            id="phone"
-                            name="phone"
-                            type="tel"
-                            value={formData.phone}
-                            onChange={handlePhoneChange}
-                            placeholder="+7 (___) ___-__-__"
-                            maxLength={18}
-                            disabled={isFormDisabled}
-                            className={`
-                w-full px-3 py-2 border rounded-lg shadow-sm
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                disabled:bg-gray-50 disabled:text-gray-500
-                ${errors.phone
-                                    ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                                    : 'border-gray-300'
-                                }
-              `}
-                        />
-                        {errors.phone && (
-                            <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
-                        )}
+        <div className="min-h-screen bg-black text-white overflow-hidden relative">
+            {/* Background effects */}
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-900/50 via-black to-gray-900/30"></div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(120,119,198,0.1),transparent)]"></div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(236,72,153,0.05),transparent)]"></div>
+            
+            {/* Floating particles */}
+            <div className="absolute inset-0">
+                {[...Array(15)].map((_, i) => (
+                    <div
+                        key={i}
+                        className="absolute w-1 h-1 bg-white/20 rounded-full animate-pulse"
+                        style={{
+                            left: `${Math.random() * 100}%`,
+                            top: `${Math.random() * 100}%`,
+                            animationDelay: `${Math.random() * 3}s`,
+                            animationDuration: `${2 + Math.random() * 3}s`
+                        }}
+                    />
+                ))}
+            </div>
+            
+            <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
+                <div className="w-full max-w-md">
+                    <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-8">
+                        {/* Header */}
+                        <div className="text-center mb-10">
+                            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-3xl mb-6 shadow-2xl relative">
+                                <Shield className="w-10 h-10 text-white" />
+                                <div className="absolute -top-1 -right-1 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
+                                    <Sparkles className="w-3 h-3 text-white" />
+                                </div>
+                            </div>
+                            
+                            <h1 className="text-3xl font-black text-white mb-3 tracking-tight">
+                                АДМИН ПАНЕЛЬ
+                            </h1>
+                            <h2 className="text-xl font-bold text-white mb-2">БТ ТЕХНИКА</h2>
+                            <p className="text-gray-400">Вход для администраторов</p>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            {/* Phone Field */}
+                            <div className="space-y-2">
+                                <label 
+                                    htmlFor="phone"
+                                    className="block text-gray-300 text-sm font-medium"
+                                >
+                                    Номер телефона
+                                </label>
+                                <div className="relative">
+                                    <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 z-10" />
+                                    <input
+                                        id="phone"
+                                        name="phone"
+                                        type="tel"
+                                        value={formData.phone}
+                                        onChange={handlePhoneChange}
+                                        placeholder="+996 XXX XXX XXX"
+                                        maxLength={18}
+                                        disabled={isFormDisabled}
+                                        className={`w-full pl-12 pr-4 py-4 bg-gray-800/60 border-2 rounded-2xl focus:outline-none transition-all duration-300 text-lg text-white placeholder-gray-500 font-mono ${
+                                            errors.phone
+                                                ? 'border-red-500/50 focus:border-red-400 bg-red-500/10'
+                                                : 'border-gray-700/50 focus:border-purple-500/60 hover:border-gray-600/50 focus:bg-gray-800/80'
+                                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    />
+                                </div>
+                                {errors.phone && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                                        <p className="text-red-400 text-sm">{errors.phone}</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Password Field */}
+                            <div className="space-y-2">
+                                <label 
+                                    htmlFor="password"
+                                    className="block text-gray-300 text-sm font-medium"
+                                >
+                                    Пароль
+                                </label>
+                                <div className="relative">
+                                    <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 z-10" />
+                                    <input
+                                        id="password"
+                                        name="password"
+                                        type={showPassword ? "text" : "password"}
+                                        value={formData.password}
+                                        onChange={handlePasswordChange}
+                                        placeholder="Введите пароль"
+                                        disabled={isFormDisabled}
+                                        className={`w-full pl-12 pr-14 py-4 bg-gray-800/60 border-2 rounded-2xl focus:outline-none transition-all duration-300 text-lg text-white placeholder-gray-500 ${
+                                            errors.password
+                                                ? 'border-red-500/50 focus:border-red-400 bg-red-500/10'
+                                                : 'border-gray-700/50 focus:border-purple-500/60 hover:border-gray-600/50 focus:bg-gray-800/80'
+                                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-300 z-10"
+                                        disabled={isFormDisabled}
+                                    >
+                                        {showPassword ? 
+                                            <EyeOff className="w-5 h-5" /> : 
+                                            <Eye className="w-5 h-5" />
+                                        }
+                                    </button>
+                                </div>
+                                {errors.password && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                                        <p className="text-red-400 text-sm">{errors.password}</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Submit Button */}
+                            <button
+                                type="submit"
+                                disabled={isFormDisabled}
+                                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center group"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white mr-3"></div>
+                                        Вход в систему...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Shield className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform duration-300" />
+                                        Войти в админ панель
+                                    </>
+                                )}
+                            </button>
+                        </form>
+
+                        {/* Additional Info */}
+                        <div className="mt-8 pt-6 border-t border-gray-800/30">
+                            <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4">
+                                <div className="flex items-start space-x-3">
+                                    <div className="bg-purple-500/10 border border-purple-500/20 p-2 rounded-xl flex-shrink-0">
+                                        <Shield className="w-5 h-5 text-purple-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold text-white mb-1">Безопасный вход</h3>
+                                        <p className="text-gray-300 text-sm leading-relaxed">
+                                            Доступ только для авторизованных администраторов системы
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                           
+                        </div>
                     </div>
 
-                    {/* Поле пароля */}
-                    <div>
-                        <label
-                            htmlFor="password"
-                            className="block text-sm font-medium text-gray-700 mb-2"
-                        >
-                            Пароль
-                        </label>
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            value={formData.password}
-                            onChange={handlePasswordChange}
-                            placeholder="Введите пароль"
-                            disabled={isFormDisabled}
-                            className={`
-                w-full px-3 py-2 border rounded-lg shadow-sm
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                disabled:bg-gray-50 disabled:text-gray-500
-                ${errors.password
-                                    ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                                    : 'border-gray-300'
-                                }
-              `}
-                        />
-                        {errors.password && (
-                            <p className="mt-1 text-sm text-red-600">{errors.password}</p>
-                        )}
+                    {/* Security Notice */}
+                    <div className="mt-6 text-center">
+                        <p className="text-gray-500 text-sm">
+                            Все действия в системе логируются для обеспечения безопасности
+                        </p>
                     </div>
                 </div>
-
-                {/* Кнопка отправки */}
-                <button
-                    type="submit"
-                    disabled={isFormDisabled}
-                    className={`
-            w-full py-2 px-4 rounded-lg font-medium text-white
-            transition duration-200 ease-in-out
-            ${isFormDisabled
-                            ? 'bg-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
-                        }
-          `}
-                >
-                    {isSubmitting ? (
-                        <span className="flex items-center justify-center">
-                            <svg
-                                className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                            >
-                                <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                />
-                                <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                />
-                            </svg>
-                            Вход...
-                        </span>
-                    ) : (
-                        'Войти'
-                    )}
-                </button>
-            </form>
-
-            {/* Дополнительные ссылки */}
-            <div className="mt-6 text-center text-sm text-gray-600">
-                <a href="#" className="text-blue-600 hover:text-blue-500">
-                    Забыли пароль?
-                </a>
             </div>
         </div>
     );
