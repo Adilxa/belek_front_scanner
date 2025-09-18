@@ -14,7 +14,7 @@ interface LoginFormData {
 
 export function LoginForm() {
     const [formData, setFormData] = useState<LoginFormData>({
-        phone: "",
+        phone: "+996 ",
         password: ""
     });
 
@@ -28,8 +28,53 @@ export function LoginForm() {
     const [errors, setErrors] = useState<Partial<LoginFormData>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Функция для форматирования номера телефона
+    const formatPhoneNumber = (value: string) => {
+        // Убираем все символы кроме цифр
+        const phoneNumber = value.replace(/\D/g, '');
+        
+        // Если номер начинается не с 996, добавляем префикс
+        let formattedNumber = phoneNumber;
+        if (!phoneNumber.startsWith('996')) {
+            formattedNumber = '996' + phoneNumber;
+        }
+        
+        // Форматируем номер по маске +996 XXX XXX XXX
+        if (formattedNumber.length >= 3) {
+            let formatted = '+996';
+            const restNumber = formattedNumber.substring(3);
+            
+            if (restNumber.length > 0) {
+                formatted += ' ' + restNumber.substring(0, 3);
+            }
+            if (restNumber.length > 3) {
+                formatted += ' ' + restNumber.substring(3, 6);
+            }
+            if (restNumber.length > 6) {
+                formatted += ' ' + restNumber.substring(6, 9);
+            }
+            
+            return formatted;
+        }
+        
+        return '+996 ';
+    };
+
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormData(prev => ({ ...prev, phone: e.target.value }));
+        const inputValue = e.target.value;
+        
+        // Не позволяем удалять префикс +996
+        if (inputValue.length < 5) {
+            setFormData(prev => ({ ...prev, phone: "+996 " }));
+            return;
+        }
+        
+        // Ограничиваем длину до полного номера
+        if (inputValue.replace(/\D/g, '').length <= 12) {
+            const formatted = formatPhoneNumber(inputValue);
+            setFormData(prev => ({ ...prev, phone: formatted }));
+        }
+        
         if (errors.phone) {
             setErrors(prev => ({ ...prev, phone: undefined }));
         }
@@ -43,10 +88,24 @@ export function LoginForm() {
         }
     };
 
+    // Обработка нажатий клавиш для предотвращения удаления префикса
+    const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const input = e.target as HTMLInputElement;
+        const cursorPosition = input.selectionStart || 0;
+        
+        // Предотвращаем удаление префикса +996
+        if ((e.key === 'Backspace' || e.key === 'Delete') && cursorPosition <= 5) {
+            e.preventDefault();
+        }
+    };
+
     const mutation = useMutation({
         mutationFn: async () => {
+            // Убираем форматирование для отправки на сервер
+            const cleanPhone = formData.phone.replace(/\D/g, '');
+            
             const res = await $api.post("/auth/login/admin", {
-                phoneNumber: formData.phone,
+                phoneNumber: `+${cleanPhone}`,
                 password: formData.password
             })
             const user = res.data.user
@@ -138,8 +197,8 @@ export function LoginForm() {
                                         type="tel"
                                         value={formData.phone}
                                         onChange={handlePhoneChange}
+                                        onKeyDown={handlePhoneKeyDown}
                                         placeholder="+996 XXX XXX XXX"
-                                        maxLength={18}
                                         disabled={isFormDisabled}
                                         className={`w-full pl-12 pr-4 py-4 bg-gray-800/60 border-2 rounded-2xl focus:outline-none transition-all duration-300 text-lg text-white placeholder-gray-500 font-mono ${
                                             errors.phone
@@ -233,8 +292,6 @@ export function LoginForm() {
                                     </div>
                                 </div>
                             </div>
-                            
-                           
                         </div>
                     </div>
 
