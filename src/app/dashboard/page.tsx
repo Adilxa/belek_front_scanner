@@ -32,6 +32,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Типы для продукта
 interface Product {
+  customPrice: number;
   id: string;
   name: string;
   price: number;
@@ -60,11 +61,16 @@ interface ProcessingResult {
   data?: CashbackResponse;
   error?: string;
 }
+interface ProductIdItem {
+  id: string;
+  customPrice: number;
+}
 
 // Типы для запроса кэшбэка
 interface CashbackRequest {
   phoneNumber: string;
-  productId: Array<string>;
+  productId: ProductIdItem[];
+  customPrice?: number;
 }
 
 // Типы для запроса списания бонусов
@@ -108,6 +114,12 @@ const DashboardPage: React.FC = () => {
   const [debitAmount, setDebitAmount] = useState<number>(0);
   const [bonusBalance, setBonusBalance] = useState<number | null>(null);
   const [isCheckingBalance, setIsCheckingBalance] = useState<boolean>(false);
+
+  const [customPrices, setCustomPrices] = useState<{ [key: number]: number }>({}); // Кастомные цены для каждого товара
+  const [customModeProducts, setCustomModeProducts] = useState<Set<number>>(new Set()); // Какие товары в кастомном режиме
+  const getProductPrice = (product: any) => {
+    return customPrices[product.id] !== undefined ? customPrices[product.id] : product.price;
+  };
 
   // Поиск товаров в Supabase
   const searchProducts = async (query: string): Promise<void> => {
@@ -195,6 +207,7 @@ const DashboardPage: React.FC = () => {
   };
 
   const resetToProductSearch = (): void => {
+    setCustomPrices({});
     setScannedData('');
     setError('');
     setCurrentState(AppState.PRODUCT_SEARCH);
@@ -269,22 +282,26 @@ const DashboardPage: React.FC = () => {
 
       const phoneNumber: string = scannedData.startsWith('+') ? scannedData : `+${scannedData}`;
 
-      const promises = selectedProducts.map(() => {
-        const requestData: CashbackRequest = {
-          phoneNumber: phoneNumber,
-          productId: selectedId
-        };
-        return $api.post<CashbackResponse>(`/cashback/process`, requestData);
-      });
+      // Формируем массив объектов с ID и кастомными ценами
+      const productIds = selectedProducts.map((product) => ({
+        id: product.id,
+        customPrice: getProductPrice(product) // Используем функцию getProductPrice для получения правильной цены
+      }));
 
-      const responses = await Promise.all(promises);
+      const requestData: CashbackRequest = {
+        phoneNumber: phoneNumber,
+        productId: productIds, // Теперь отправляем массив объектов вместо массива строк
+      };
+
+      // Отправляем один запрос с массивом объектов
+      const response = await $api.post<CashbackResponse>(`/cashback/process`, requestData);
 
       setProcessingResult({
         success: true,
         data: {
           success: true,
-          message: `Кэшбэк обработан для ${responses.length} товаров`,
-          results: responses.map(r => r.data),
+          message: `Кэшбэк обработан для ${selectedProducts.length} товаров`,
+          result: response.data,
           processedProducts: selectedProducts,
           phoneNumber: phoneNumber,
           operationType: 'CASHBACK'
@@ -292,6 +309,7 @@ const DashboardPage: React.FC = () => {
       });
 
       setCurrentState(AppState.RESULT);
+      setCustomModeProducts(new Set());
     } catch (err: any) {
       console.error('Error processing cashback:', err);
 
@@ -353,7 +371,16 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  const totalAmount = selectedProducts.reduce((sum, product) => sum + product.price, 0);
+
+  const totalAmount = selectedProducts.reduce((sum, product) => sum + getProductPrice(product), 0);
+
+  const productIds = selectedProducts.map((product) => ({
+    id: product.id,
+    customPrice: getProductPrice(product) // Используем функцию getProductPrice для получения правильной цены
+  }));
+  console.log(productIds)
+  const totalAmountCustom = productIds.reduce((sum, product) => sum + product.customPrice, 0);
+
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden relative">
@@ -517,7 +544,7 @@ const DashboardPage: React.FC = () => {
                         <div className="border-t border-purple-500/20 pt-2 mt-2">
                           <div className="flex justify-between font-bold">
                             <span className="text-white">Общая сумма:</span>
-                            <span className="text-purple-400">{totalAmount}KGS</span>
+                            <span className="text-purple-400">{customModeProducts ? totalAmountCustom : totalAmount}KGS</span>
                           </div>
                         </div>
                       </div>
@@ -772,16 +799,63 @@ const DashboardPage: React.FC = () => {
 
                 {operationType === OperationType.CASHBACK ? (
                   <div className="space-y-2">
-                    {selectedProducts.map((product) => (
+                    {selectedProducts.map((product: any) => (
                       <div key={product.id} className="flex justify-between text-sm">
                         <span className="text-gray-300">{product.name}</span>
-                        <span className="text-purple-400 font-semibold">{product.price}KGS</span>
+                        <span className="text-purple-400 font-semibold">
+                          {customModeProducts.has(product.id) ? (
+                            <input
+                              type="number"
+                              value={customPrices[product.id] || product.price} // Используем кастомную цену или дефолтную
+                              onChange={(e: any) => setCustomPrices(prev => ({
+                                ...prev,
+                                [product.id]: Number(e.target.value) || 0
+                              }))}
+                              className="bg-transparent border-b border-purple-400 outline-none text-purple-400 w-20"
+                              placeholder="Цена"
+                            />
+                          ) : (
+                            `${getProductPrice(product)}KGS`
+                          )}
+                        </span>
+                        {customModeProducts.has(product.id) ? (
+                          <button onClick={() => {
+                            // Выключаем кастомный режим для этого товара
+                            setCustomModeProducts(prev => {
+                              const newSet = new Set(prev);
+                              newSet.delete(product.id);
+                              return newSet;
+                            });
+                            // Удаляем кастомную цену для этого товара
+                            setCustomPrices(prev => {
+                              const newPrices = { ...prev };
+                              delete newPrices[product.id];
+                              return newPrices;
+                            });
+                          }}>
+                            Отменить
+                          </button>
+                        ) : (
+                          <button onClick={() => {
+                            // Включаем кастомный режим для этого товара
+                            setCustomModeProducts(prev => new Set([...prev, product.id]));
+                            // Инициализируем кастомную цену дефолтной ценой
+                            setCustomPrices(prev => ({
+                              ...prev,
+                              [product.id]: product.price
+                            }));
+                          }}>
+                            Изменить цену
+                          </button>
+                        )}
                       </div>
                     ))}
                     <div className="border-t border-purple-500/20 pt-2 mt-2">
                       <div className="flex justify-between font-bold">
                         <span className="text-white">Итого к начислению:</span>
-                        <span className="text-green-400">{Math.round(Number(totalAmount) * 0.03 * 10) / 10}KGS</span>
+                        <span className="text-green-400">
+                          {Math.round(Number(totalAmount) * 0.03 * 10) / 10}KGS
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -918,7 +992,7 @@ const DashboardPage: React.FC = () => {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-300">Общая сумма:</span>
-                            <span className="text-green-300 font-semibold">{totalAmount}KGS</span>
+                            <span className="text-green-300 font-semibold">{customModeProducts ? totalAmountCustom : totalAmount}KGS</span>
                           </div>
                         </>
                       )}
