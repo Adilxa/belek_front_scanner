@@ -22,15 +22,31 @@ import {
   Minus,
   Plus,
   CreditCard,
-  Wallet
+  Wallet,
+  Edit3
 } from 'lucide-react';
 
-// Конфигурация Supabase - ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ
 const supabaseUrl = 'https://thggdvdkvsrytiwqhsbe.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZ2dkdmRrdnNyeXRpd3Foc2JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MTIyMjIsImV4cCI6MjA2MzQ4ODIyMn0.a_-qrjwuFCv8hk0IOSGqAYHznwTlG_e3guNzUFMun3E';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Типы для продукта
+const BANKS = [
+  'MBank',
+  'O! Bank',
+  'OptimaBank',
+  'Bakai Bank',
+  'MBank MPLUS',
+  'OGOGO',
+  'INSAF Finance',
+  'Банк Азии',
+  'Cash2u',
+  'МБулак',
+  'KICB',
+  'Optima',
+  'ZERO',
+  'О! Маркет'
+];
+
 interface Product {
   customPrice: number;
   id: string;
@@ -40,12 +56,15 @@ interface Product {
   created_at?: string;
 }
 
-// Типы для результата сканирования
+interface ManualProduct {
+  name: string;
+  price: number;
+}
+
 interface ScanResult {
   rawValue: string;
 }
 
-// Типы для результата обработки кэшбэка
 interface CashbackResponse {
   success: boolean;
   message?: string;
@@ -55,32 +74,30 @@ interface CashbackResponse {
   [key: string]: any;
 }
 
-// Типы для состояния результата обработки
 interface ProcessingResult {
   success: boolean;
   data?: CashbackResponse;
   error?: string;
 }
-interface ProductIdItem {
-  id: string;
-  customPrice: number;
-}
 
-// Типы для запроса кэшбэка
-interface CashbackRequest {
-  phoneNumber: string;
-  productId: ProductIdItem[];
+interface ProductIdItem {
+  productId: string;
   customPrice?: number;
 }
 
-// Типы для запроса списания бонусов
+interface CashbackRequest {
+  phoneNumber: string;
+  paymentType: string;
+  productIds?: ProductIdItem[];
+  products?: ManualProduct[];
+}
+
 interface DebitRequest {
   phoneNumber: string;
   amount: string;
   reason?: string;
 }
 
-// Enum для состояний приложения
 enum AppState {
   PRODUCT_SEARCH = 'PRODUCT_SEARCH',
   READY_TO_SCAN = 'READY_TO_SCAN',
@@ -91,7 +108,6 @@ enum AppState {
   ERROR = 'ERROR'
 }
 
-// Enum для операций
 enum OperationType {
   CASHBACK = 'CASHBACK',
   DEBIT = 'DEBIT'
@@ -107,21 +123,27 @@ const DashboardPage: React.FC = () => {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
-  const [selectedId, setSelectedId] = useState<any[]>([]);
-
-  // Новые состояния для списания бонусов
+  
   const [operationType, setOperationType] = useState<OperationType>(OperationType.CASHBACK);
   const [debitAmount, setDebitAmount] = useState<number>(0);
   const [bonusBalance, setBonusBalance] = useState<number | null>(null);
   const [isCheckingBalance, setIsCheckingBalance] = useState<boolean>(false);
 
-  const [customPrices, setCustomPrices] = useState<{ [key: number]: number }>({}); // Кастомные цены для каждого товара
-  const [customModeProducts, setCustomModeProducts] = useState<Set<number>>(new Set()); // Какие товары в кастомном режиме
-  const getProductPrice = (product: any) => {
+  const [customPrices, setCustomPrices] = useState<{ [key: string]: number }>({});
+  const [customModeProducts, setCustomModeProducts] = useState<Set<string>>(new Set());
+  
+  // Новые состояния для ручного товара
+  const [manualProductName, setManualProductName] = useState<string>('');
+  const [manualProductPrice, setManualProductPrice] = useState<number>(0);
+  const [manualProducts, setManualProducts] = useState<ManualProduct[]>([]);
+  
+  // Выбранный банк
+  const [selectedBank, setSelectedBank] = useState<string>('MBank');
+
+  const getProductPrice = (product: Product) => {
     return customPrices[product.id] !== undefined ? customPrices[product.id] : product.price;
   };
 
-  // Поиск товаров в Supabase
   const searchProducts = async (query: string): Promise<void> => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -152,7 +174,6 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  // Проверка баланса бонусов
   const checkBonusBalance = async (phoneNumber: string): Promise<void> => {
     try {
       setIsCheckingBalance(true);
@@ -168,7 +189,6 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  // Debounced поиск
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchQuery) {
@@ -188,8 +208,6 @@ const DashboardPage: React.FC = () => {
       setCurrentState(AppState.SCANNED);
       setError('');
       setProcessingResult(null);
-
-      // Автоматически проверяем баланс бонусов после сканирования
       checkBonusBalance(phoneNumber);
     }
   };
@@ -218,6 +236,10 @@ const DashboardPage: React.FC = () => {
     setBonusBalance(null);
     setDebitAmount(0);
     setOperationType(OperationType.CASHBACK);
+    setManualProductName('');
+    setManualProductPrice(0);
+    setManualProducts([]);
+    setSelectedBank('MBank');
   };
 
   const resetToReadyToScan = (): void => {
@@ -243,9 +265,6 @@ const DashboardPage: React.FC = () => {
   };
 
   const handleProductToggle = (product: Product): void => {
-    setSelectedId((prev) => {
-      return [...prev, product.id];
-    });
     setSelectedProducts(prev => {
       const isSelected = prev.some(p => p.id === product.id);
       if (isSelected) {
@@ -256,9 +275,25 @@ const DashboardPage: React.FC = () => {
     });
   };
 
+  const addManualProduct = (): void => {
+    if (!manualProductName.trim() || manualProductPrice <= 0) {
+      setError('Введите название и цену товара');
+      return;
+    }
+
+    setManualProducts(prev => [...prev, { name: manualProductName, price: manualProductPrice }]);
+    setManualProductName('');
+    setManualProductPrice(0);
+    setError('');
+  };
+
+  const removeManualProduct = (index: number): void => {
+    setManualProducts(prev => prev.filter((_, i) => i !== index));
+  };
+
   const confirmProductSelection = (): void => {
-    if (operationType === OperationType.CASHBACK && selectedProducts.length === 0) {
-      setError('Выберите хотя бы один товар для начисления кэшбэка');
+    if (operationType === OperationType.CASHBACK && selectedProducts.length === 0 && manualProducts.length === 0) {
+      setError('Выберите товары из базы или добавьте ручной товар');
       return;
     }
     setError('');
@@ -271,7 +306,7 @@ const DashboardPage: React.FC = () => {
   };
 
   const processCashback = async (): Promise<void> => {
-    if (selectedProducts.length === 0 || !scannedData) {
+    if ((selectedProducts.length === 0 && manualProducts.length === 0) || !scannedData) {
       setError('Выберите продукты и отсканируйте номер телефона');
       return;
     }
@@ -282,31 +317,56 @@ const DashboardPage: React.FC = () => {
 
       const phoneNumber: string = scannedData.startsWith('+') ? scannedData : `+${scannedData}`;
 
-      // Формируем массив объектов с ID и кастомными ценами
-      const productIds = selectedProducts.map((product) => ({
-        id: product.id,
-        customPrice: getProductPrice(product) // Используем функцию getProductPrice для получения правильной цены
-      }));
-
-      const requestData: CashbackRequest = {
-        phoneNumber: phoneNumber,
-        productId: productIds, // Теперь отправляем массив объектов вместо массива строк
-      };
-
-      // Отправляем один запрос с массивом объектов
-      const response = await $api.post<CashbackResponse>(`/cashback/process`, requestData);
-
-      setProcessingResult({
-        success: true,
-        data: {
-          success: true,
-          message: `Кэшбэк обработан для ${selectedProducts.length} товаров`,
-          result: response.data,
-          processedProducts: selectedProducts,
+      // Если есть ручные товары, используем отдельный эндпоинт
+      if (manualProducts.length > 0) {
+        const requestData = {
           phoneNumber: phoneNumber,
-          operationType: 'CASHBACK'
-        } as CashbackResponse
-      });
+          paymentType: selectedBank,
+          products: manualProducts
+        };
+
+        const response = await $api.post<CashbackResponse>(`/cashback/process-direct`, requestData);
+
+        setProcessingResult({
+          success: true,
+          data: {
+            success: true,
+            message: `Кэшбэк обработан для ${manualProducts.length} ручных товаров`,
+            result: response.data,
+            processedProducts: manualProducts,
+            phoneNumber: phoneNumber,
+            operationType: 'CASHBACK',
+            paymentType: selectedBank
+          } as CashbackResponse
+        });
+      } else {
+        // Обычные товары из базы
+        const productIds = selectedProducts.map((product) => ({
+          productId: product.id,
+          ...(customPrices[product.id] !== undefined && { customPrice: customPrices[product.id] })
+        }));
+
+        const requestData: CashbackRequest = {
+          phoneNumber: phoneNumber,
+          paymentType: selectedBank,
+          productIds: productIds
+        };
+
+        const response = await $api.post<CashbackResponse>(`/cashback/process`, requestData);
+
+        setProcessingResult({
+          success: true,
+          data: {
+            success: true,
+            message: `Кэшбэк обработан для ${selectedProducts.length} товаров`,
+            result: response.data,
+            processedProducts: selectedProducts,
+            phoneNumber: phoneNumber,
+            operationType: 'CASHBACK',
+            paymentType: selectedBank
+          } as CashbackResponse
+        });
+      }
 
       setCurrentState(AppState.RESULT);
       setCustomModeProducts(new Set());
@@ -342,9 +402,9 @@ const DashboardPage: React.FC = () => {
       const requestData: DebitRequest = {
         phoneNumber: phoneNumber,
         amount: String(debitAmount),
-        reason: `Списание бонусов через QR-кэшбэк приложение`
+        reason: `Списание бонусов через ${selectedBank}`
       };
-      // console.log(requestData)
+
       const response = await $api.post<CashbackResponse>(`/cashback/deduct`, requestData);
 
       setProcessingResult({
@@ -353,12 +413,12 @@ const DashboardPage: React.FC = () => {
           ...response.data,
           operationType: 'DEBIT',
           debitedAmount: debitAmount,
-          phoneNumber: phoneNumber
+          phoneNumber: phoneNumber,
+          paymentType: selectedBank
         }
       });
 
       setCurrentState(AppState.RESULT);
-      console.log("works")
     } catch (err: any) {
       console.error('Error processing debit:', err);
 
@@ -371,25 +431,16 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-
   const totalAmount = selectedProducts.reduce((sum, product) => sum + getProductPrice(product), 0);
-
-  const productIds = selectedProducts.map((product) => ({
-    id: product.id,
-    customPrice: getProductPrice(product) // Используем функцию getProductPrice для получения правильной цены
-  }));
-  console.log(productIds)
-  const totalAmountCustom = productIds.reduce((sum, product) => sum + product.customPrice, 0);
-
+  const manualTotalAmount = manualProducts.reduce((sum, product) => sum + product.price, 0);
+  const grandTotal = totalAmount + manualTotalAmount;
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden relative">
-      {/* Background effects - остается тот же */}
       <div className="absolute inset-0 bg-gradient-to-br from-gray-900/50 via-black to-gray-900/30"></div>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(120,119,198,0.1),transparent)]"></div>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(236,72,153,0.05),transparent)]"></div>
 
-      {/* Floating particles - остается тот же */}
       <div className="absolute inset-0">
         {[...Array(25)].map((_, i) => (
           <div
@@ -407,7 +458,6 @@ const DashboardPage: React.FC = () => {
 
       <div className="relative z-10 min-h-screen p-6">
         <div className="max-w-md mx-auto">
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-3xl mb-6 shadow-2xl">
               <Zap className="w-10 h-10 text-white" />
@@ -416,10 +466,26 @@ const DashboardPage: React.FC = () => {
             <p className="text-gray-400">Система начисления и списания бонусов</p>
           </div>
 
-          {/* Operation Type Selector */}
           {currentState === AppState.PRODUCT_SEARCH && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               <h3 className="text-lg font-bold text-white mb-4 text-center">Выберите операцию</h3>
+
+              {/* Выбор банка */}
+              <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-6">
+                <label className="block text-white font-semibold mb-2 flex items-center">
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Выберите банк/метод оплаты
+                </label>
+                <select
+                  value={selectedBank}
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                  className="w-full bg-gray-800/50 border border-gray-700/30 text-white px-4 py-3 rounded-2xl focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 focus:outline-none transition-all duration-300"
+                >
+                  {BANKS.map(bank => (
+                    <option key={bank} value={bank}>{bank}</option>
+                  ))}
+                </select>
+              </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <button
@@ -451,9 +517,64 @@ const DashboardPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Cashback Operation */}
               {operationType === OperationType.CASHBACK && (
                 <>
+                  {/* Ручной ввод товара */}
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 mb-6">
+                    <h4 className="text-white font-semibold mb-3 flex items-center">
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Добавить товар вручную
+                    </h4>
+                    
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Название товара"
+                        value={manualProductName}
+                        onChange={(e) => setManualProductName(e.target.value)}
+                        className="w-full bg-gray-800/50 border border-gray-700/30 text-white placeholder-gray-400 px-4 py-3 rounded-2xl focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all duration-300"
+                      />
+                      
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Цена"
+                        value={manualProductPrice || ''}
+                        onChange={(e) => setManualProductPrice(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-gray-800/50 border border-gray-700/30 text-white placeholder-gray-400 px-4 py-3 rounded-2xl focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all duration-300"
+                      />
+                      
+                      <button
+                        onClick={addManualProduct}
+                        className="w-full bg-blue-500/20 border border-blue-500/30 text-blue-400 font-semibold py-3 rounded-2xl hover:bg-blue-500/30 hover:border-blue-500/50 transition-all duration-300 flex items-center justify-center"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Добавить товар
+                      </button>
+                    </div>
+
+                    {manualProducts.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <h5 className="text-gray-300 text-sm font-semibold">Добавленные товары:</h5>
+                        {manualProducts.map((product, index) => (
+                          <div key={index} className="flex justify-between items-center bg-gray-800/30 p-3 rounded-xl">
+                            <div>
+                              <span className="text-white font-medium">{product.name}</span>
+                              <span className="text-blue-400 ml-2">{product.price}KGS</span>
+                            </div>
+                            <button
+                              onClick={() => removeManualProduct(index)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="text-center mb-6">
                     <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-3xl flex items-center justify-center">
                       <Search className="w-8 h-8 text-blue-400" />
@@ -462,7 +583,6 @@ const DashboardPage: React.FC = () => {
                     <p className="text-gray-400">Найдите и выберите товары для кэшбэка</p>
                   </div>
 
-                  {/* Search Input */}
                   <div className="relative mb-6">
                     <input
                       type="text"
@@ -487,7 +607,6 @@ const DashboardPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Search Results */}
                   {searchResults.length > 0 && (
                     <div className="mb-6">
                       <h4 className="text-white font-semibold mb-3">Результаты поиска ({searchResults.length})</h4>
@@ -527,24 +646,76 @@ const DashboardPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Selected Products Summary */}
-                  {selectedProducts.length > 0 && (
+                  {(selectedProducts.length > 0 || manualProducts.length > 0) && (
                     <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 mb-6">
                       <h4 className="text-white font-semibold mb-3 flex items-center">
                         <Package className="w-4 h-4 mr-2" />
-                        Выбрано товаров: {selectedProducts.length}
+                        Итого: {selectedProducts.length + manualProducts.length} товаров
                       </h4>
-                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
                         {selectedProducts.map((product) => (
-                          <div key={product.id} className="flex justify-between text-sm">
+                          <div key={product.id} className="flex justify-between text-sm items-center">
                             <span className="text-gray-300">{product.name}</span>
-                            <span className="text-purple-400 font-semibold">{product.price}KGS</span>
+                            <div className="flex items-center gap-2">
+                              {customModeProducts.has(product.id) ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={customPrices[product.id] || product.price}
+                                    onChange={(e) => setCustomPrices(prev => ({
+                                      ...prev,
+                                      [product.id]: Number(e.target.value) || 0
+                                    }))}
+                                    className="bg-gray-800/50 border border-purple-400/50 text-purple-400 w-20 px-2 py-1 rounded-lg text-sm"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      setCustomModeProducts(prev => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(product.id);
+                                        return newSet;
+                                      });
+                                      setCustomPrices(prev => {
+                                        const newPrices = { ...prev };
+                                        delete newPrices[product.id];
+                                        return newPrices;
+                                      });
+                                    }}
+                                    className="text-gray-400 hover:text-white text-xs"
+                                  >
+                                    ✓
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-purple-400 font-semibold">{getProductPrice(product)}KGS</span>
+                                  <button
+                                    onClick={() => {
+                                      setCustomModeProducts(prev => new Set([...prev, product.id]));
+                                      setCustomPrices(prev => ({
+                                        ...prev,
+                                        [product.id]: product.price
+                                      }));
+                                    }}
+                                    className="text-gray-400 hover:text-purple-400 text-xs"
+                                  >
+                                    ✎
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {manualProducts.map((product, index) => (
+                          <div key={`manual-${index}`} className="flex justify-between text-sm">
+                            <span className="text-gray-300">{product.name} (ручной)</span>
+                            <span className="text-blue-400 font-semibold">{product.price}KGS</span>
                           </div>
                         ))}
                         <div className="border-t border-purple-500/20 pt-2 mt-2">
                           <div className="flex justify-between font-bold">
                             <span className="text-white">Общая сумма:</span>
-                            <span className="text-purple-400">{customModeProducts ? totalAmountCustom : totalAmount}KGS</span>
+                            <span className="text-purple-400">{grandTotal}KGS</span>
                           </div>
                         </div>
                       </div>
@@ -553,7 +724,6 @@ const DashboardPage: React.FC = () => {
                 </>
               )}
 
-              {/* Debit Operation */}
               {operationType === OperationType.DEBIT && (
                 <div className="text-center mb-6">
                   <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30 rounded-3xl flex items-center justify-center">
@@ -583,7 +753,7 @@ const DashboardPage: React.FC = () => {
 
               <button
                 onClick={confirmProductSelection}
-                disabled={operationType === OperationType.CASHBACK ? selectedProducts.length === 0 : debitAmount <= 0}
+                disabled={operationType === OperationType.CASHBACK ? (selectedProducts.length === 0 && manualProducts.length === 0) : debitAmount <= 0}
                 className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-4 rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-[1.02] shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
               >
                 <Camera className="w-5 h-5 mr-3" />
@@ -601,7 +771,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Ready to Scan State */}
           {currentState === AppState.READY_TO_SCAN && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               <div className="text-center mb-6">
@@ -612,13 +781,19 @@ const DashboardPage: React.FC = () => {
                 <p className="text-gray-400 mb-4">Отсканируйте QR код клиента</p>
               </div>
 
-              {/* Operation Summary */}
+              <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Метод оплаты:</span>
+                  <span className="text-purple-400 font-semibold">{selectedBank}</span>
+                </div>
+              </div>
+
               <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-6">
                 <h4 className="text-white font-semibold mb-3 flex items-center">
                   {operationType === OperationType.CASHBACK ? (
                     <>
                       <Plus className="w-4 h-4 mr-2 text-green-400" />
-                      Начисление кэшбэка ({selectedProducts.length} товаров)
+                      Начисление кэшбэка ({selectedProducts.length + manualProducts.length} товаров)
                     </>
                   ) : (
                     <>
@@ -634,16 +809,20 @@ const DashboardPage: React.FC = () => {
                       <div key={product.id} className="flex justify-between text-sm">
                         <span className="text-gray-300">{product.name}</span>
                         <div>
-                          <span className="text-purple-400 font-semibold">{product.price}KGS</span>
-                          <br />
-                          <div className="text-white font-semibold">{Math.round(Number(product.price) * 0.03 * 10) / 10} Бонус</div>
+                          <span className="text-purple-400 font-semibold">{getProductPrice(product)}KGS</span>
                         </div>
+                      </div>
+                    ))}
+                    {manualProducts.map((product, index) => (
+                      <div key={`manual-${index}`} className="flex justify-between text-sm">
+                        <span className="text-gray-300">{product.name} (ручной)</span>
+                        <span className="text-blue-400 font-semibold">{product.price}KGS</span>
                       </div>
                     ))}
                     <div className="border-t border-gray-700/30 pt-2 mt-2">
                       <div className="flex justify-between font-bold">
                         <span className="text-white">Итого:</span>
-                        <span className="text-purple-400">{totalAmount}KGS</span>
+                        <span className="text-purple-400">{grandTotal}KGS</span>
                       </div>
                     </div>
                   </div>
@@ -675,7 +854,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Scanning State - остается тот же */}
           {currentState === AppState.SCANNING && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl overflow-hidden mb-6">
               <div className="p-6">
@@ -694,16 +872,13 @@ const DashboardPage: React.FC = () => {
                       }}
                     />
 
-                    {/* Scanning Overlay */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-56 h-56 border-2 border-purple-400/50 rounded-3xl relative">
-                        {/* Corner indicators */}
                         <div className="absolute -top-1 -left-1 w-8 h-8 border-l-4 border-t-4 border-purple-400 rounded-tl-2xl"></div>
                         <div className="absolute -top-1 -right-1 w-8 h-8 border-r-4 border-t-4 border-purple-400 rounded-tr-2xl"></div>
                         <div className="absolute -bottom-1 -left-1 w-8 h-8 border-l-4 border-b-4 border-purple-400 rounded-bl-2xl"></div>
                         <div className="absolute -bottom-1 -right-1 w-8 h-8 border-r-4 border-b-4 border-purple-400 rounded-br-2xl"></div>
 
-                        {/* Scanning line */}
                         <div className="absolute top-1/2 left-4 right-4 h-1 bg-gradient-to-r from-transparent via-purple-400 to-transparent animate-pulse transform -translate-y-1/2 rounded-full"></div>
                       </div>
                     </div>
@@ -735,7 +910,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Scanned State - обновленный с балансом и выбором операции */}
           {currentState === AppState.SCANNED && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               <div className="text-center mb-6">
@@ -755,7 +929,16 @@ const DashboardPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Bonus Balance Display */}
+              <div className="bg-gray-800/40 border border-gray-700/30 rounded-2xl p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <CreditCard className="w-4 h-4 text-purple-400 mr-2" />
+                    <span className="text-gray-400 text-sm">Метод оплаты:</span>
+                  </div>
+                  <span className="text-purple-400 font-semibold">{selectedBank}</span>
+                </div>
+              </div>
+
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 mb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
@@ -781,13 +964,12 @@ const DashboardPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Transaction Summary */}
               <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 mb-6">
                 <h4 className="text-white font-semibold mb-3 flex items-center">
                   {operationType === OperationType.CASHBACK ? (
                     <>
                       <Zap className="w-4 h-4 mr-2" />
-                      К начислению ({selectedProducts.length} товаров)
+                      К начислению ({selectedProducts.length + manualProducts.length} товаров)
                     </>
                   ) : (
                     <>
@@ -799,62 +981,70 @@ const DashboardPage: React.FC = () => {
 
                 {operationType === OperationType.CASHBACK ? (
                   <div className="space-y-2">
-                    {selectedProducts.map((product: any) => (
-                      <div key={product.id} className="flex justify-between text-sm">
+                    {selectedProducts.map((product) => (
+                      <div key={product.id} className="flex justify-between text-sm items-center">
                         <span className="text-gray-300">{product.name}</span>
-                        <span className="text-purple-400 font-semibold">
+                        <div className="flex items-center gap-2">
                           {customModeProducts.has(product.id) ? (
-                            <input
-                              type="number"
-                              value={customPrices[product.id] || product.price} // Используем кастомную цену или дефолтную
-                              onChange={(e: any) => setCustomPrices(prev => ({
-                                ...prev,
-                                [product.id]: Number(e.target.value) || 0
-                              }))}
-                              className="bg-transparent border-b border-purple-400 outline-none text-purple-400 w-20"
-                              placeholder="Цена"
-                            />
+                            <>
+                              <input
+                                type="number"
+                                value={customPrices[product.id] || product.price}
+                                onChange={(e) => setCustomPrices(prev => ({
+                                  ...prev,
+                                  [product.id]: Number(e.target.value) || 0
+                                }))}
+                                className="bg-gray-800/50 border border-purple-400/50 text-purple-400 w-20 px-2 py-1 rounded-lg text-sm"
+                              />
+                              <button
+                                onClick={() => {
+                                  setCustomModeProducts(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(product.id);
+                                    return newSet;
+                                  });
+                                  setCustomPrices(prev => {
+                                    const newPrices = { ...prev };
+                                    delete newPrices[product.id];
+                                    return newPrices;
+                                  });
+                                }}
+                                className="text-gray-400 hover:text-white text-xs"
+                              >
+                                ✓
+                              </button>
+                            </>
                           ) : (
-                            `${getProductPrice(product)}KGS`
+                            <>
+                              <span className="text-purple-400 font-semibold">{getProductPrice(product)}KGS</span>
+                              <button
+                                onClick={() => {
+                                  setCustomModeProducts(prev => new Set([...prev, product.id]));
+                                  setCustomPrices(prev => ({
+                                    ...prev,
+                                    [product.id]: product.price
+                                  }));
+                                }}
+                                className="text-gray-400 hover:text-purple-400 text-xs"
+                              >
+                                ✎
+                              </button>
+                            </>
                           )}
-                        </span>
-                        {customModeProducts.has(product.id) ? (
-                          <button onClick={() => {
-                            // Выключаем кастомный режим для этого товара
-                            setCustomModeProducts(prev => {
-                              const newSet = new Set(prev);
-                              newSet.delete(product.id);
-                              return newSet;
-                            });
-                            // Удаляем кастомную цену для этого товара
-                            setCustomPrices(prev => {
-                              const newPrices = { ...prev };
-                              delete newPrices[product.id];
-                              return newPrices;
-                            });
-                          }}>
-                            Отменить
-                          </button>
-                        ) : (
-                          <button onClick={() => {
-                            // Включаем кастомный режим для этого товара
-                            setCustomModeProducts(prev => new Set([...prev, product.id]));
-                            // Инициализируем кастомную цену дефолтной ценой
-                            setCustomPrices(prev => ({
-                              ...prev,
-                              [product.id]: product.price
-                            }));
-                          }}>
-                            Изменить цену
-                          </button>
-                        )}
+                        </div>
+                      </div>
+                    ))}
+                    {manualProducts.map((product, index) => (
+                      <div key={`manual-${index}`} className="flex justify-between text-sm">
+                        <span className="text-gray-300">{product.name} (ручной)</span>
+                        <span className="text-blue-400 font-semibold">{product.price}KGS</span>
                       </div>
                     ))}
                     <div className="border-t border-purple-500/20 pt-2 mt-2">
                       <div className="flex justify-between font-bold">
                         <span className="text-white">Итого к начислению:</span>
                         <span className="text-green-400">
-                          {Math.round(Number(totalAmount) * 0.03 * 10) / 10}KGS
+                          {Math.round(Number(grandTotal) * 0.03 * 10) / 10}KGS
                         </span>
                       </div>
                     </div>
@@ -916,7 +1106,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Processing State - остается тот же */}
           {currentState === AppState.PROCESSING && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               <div className="text-center">
@@ -930,8 +1119,8 @@ const DashboardPage: React.FC = () => {
                 <div className="mt-4">
                   <div className="text-sm text-gray-500">
                     {operationType === OperationType.CASHBACK
-                      ? `Обрабатываем ${selectedProducts.length} товаров`
-                      : `Списываем ${debitAmount}`
+                      ? `Обрабатываем ${selectedProducts.length + manualProducts.length} товаров через ${selectedBank}`
+                      : `Списываем ${debitAmount}KGS через ${selectedBank}`
                     }
                   </div>
                 </div>
@@ -939,7 +1128,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Result State - обновленный для поддержки списания */}
           {currentState === AppState.RESULT && processingResult && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               {processingResult.success ? (
@@ -954,13 +1142,17 @@ const DashboardPage: React.FC = () => {
                     }
                   </h3>
 
-                  {/* Transaction Details */}
                   <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4 mb-6 text-left">
                     <h4 className="text-green-300 font-semibold mb-3">Детали транзакции</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-300">Телефон:</span>
                         <span className="text-green-300 font-mono">{processingResult.data?.phoneNumber}</span>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-gray-300">Метод оплаты:</span>
+                        <span className="text-purple-300">{processingResult.data?.paymentType || selectedBank}</span>
                       </div>
 
                       {processingResult.data?.operationType === 'DEBIT' ? (
@@ -988,11 +1180,11 @@ const DashboardPage: React.FC = () => {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-300">Товаров:</span>
-                            <span className="text-green-300">{selectedProducts.length}</span>
+                            <span className="text-green-300">{selectedProducts.length + manualProducts.length}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-300">Общая сумма:</span>
-                            <span className="text-green-300 font-semibold">{customModeProducts ? totalAmountCustom : totalAmount}KGS</span>
+                            <span className="text-green-300 font-semibold">{grandTotal}KGS</span>
                           </div>
                         </>
                       )}
@@ -1042,7 +1234,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Error State - остается тот же */}
           {currentState === AppState.ERROR && (
             <div className="bg-gray-900/80 backdrop-blur-xl border border-gray-800/50 rounded-3xl shadow-2xl p-6 mb-6">
               <div className="text-center">
@@ -1066,7 +1257,6 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Help Card - обновленный */}
           <div className="bg-gray-900/60 backdrop-blur-xl border border-gray-800/30 rounded-3xl shadow-xl p-6">
             <h4 className="text-lg font-bold text-white mb-4 flex items-center">
               <Zap className="w-5 h-5 mr-2 text-purple-400" />
@@ -1074,8 +1264,8 @@ const DashboardPage: React.FC = () => {
             </h4>
             <div className="space-y-3">
               {[
-                { step: 1, text: "Выберите тип операции: начисление или списание", icon: CreditCard },
-                { step: 2, text: "Для начисления: найдите товары. Для списания: введите сумму", icon: operationType === OperationType.CASHBACK ? Search : Wallet },
+                { step: 1, text: "Выберите тип операции и метод оплаты", icon: CreditCard },
+                { step: 2, text: "Добавьте товары из базы или введите вручную", icon: operationType === OperationType.CASHBACK ? Search : Wallet },
                 { step: 3, text: "Отсканируйте QR код с номером клиента", icon: Camera },
                 { step: 4, text: "Обработайте операцию и получите результат", icon: CheckCircle }
               ].map(({ step, text, icon: Icon }) => (
